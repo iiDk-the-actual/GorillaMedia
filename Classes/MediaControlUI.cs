@@ -1,4 +1,5 @@
-﻿using TMPro;
+﻿using GorillaMedia.Classes;
+using TMPro;
 using UnityEngine;
 using UnityEngine.InputSystem.HID;
 using UnityEngine.UI;
@@ -116,16 +117,20 @@ namespace GorillaMedia
 
         public void LateUpdate()
         {
-            transform.position = TrueLeftHand().position;
+            bool rightHand = ConfigManager.HandChoice.Value == "Right";
+            var activeHand = rightHand ? TrueRightHand() : TrueLeftHand();
+            var handTransform = rightHand ? GorillaTagger.Instance.offlineVRRig.rightHandTransform : GorillaTagger.Instance.offlineVRRig.leftHandTransform;
+
+            transform.position = activeHand.position;
             transform.LookAt(GorillaTagger.Instance.headCollider.transform.position);
             transform.position += transform.forward * 0.1f;
             transform.Rotate(0, 180f, 0);
 
-            bool shouldGrow = Vector3.Distance(GorillaTagger.Instance.headCollider.transform.position, TrueLeftHand().position) < 0.7f
-               && Vector3.Angle(GorillaTagger.Instance.headCollider.transform.forward, (TrueLeftHand().position - GorillaTagger.Instance.headCollider.transform.position).normalized) < 30f
+            bool shouldGrow = Vector3.Distance(GorillaTagger.Instance.headCollider.transform.position, activeHand.position) < 0.7f
+               && Vector3.Angle(GorillaTagger.Instance.headCollider.transform.forward, (activeHand.position - GorillaTagger.Instance.headCollider.transform.position).normalized) < 30f
                && (Vector3.Dot(
                     GorillaTagger.Instance.headCollider.transform.forward.normalized,
-                   -GorillaTagger.Instance.offlineVRRig.leftHandTransform.right.normalized
+                    rightHand ? handTransform.right.normalized : -handTransform.right.normalized
                   ) > 0.7f);
 
             transform.localScale = Vector3.Lerp(transform.localScale, shouldGrow ? uiScale : Vector3.zero, Time.deltaTime * 15f);
@@ -148,6 +153,12 @@ namespace GorillaMedia
                 Mathf.Lerp(0f, maxSliderProgress, (clampedElapsed - MediaManager.StartTime) / (MediaManager.EndTime - MediaManager.StartTime)),
                 progressBar.sizeDelta.y
             );
+        }
+
+        public static (Vector3 position, Quaternion rotation, Vector3 up, Vector3 forward, Vector3 right) TrueRightHand()
+        {
+            Quaternion rot = GorillaTagger.Instance.rightHandTransform.rotation * GorillaLocomotion.GTPlayer.Instance.rightHandRotOffset;
+            return (GorillaTagger.Instance.rightHandTransform.position + GorillaTagger.Instance.rightHandTransform.rotation * GorillaLocomotion.GTPlayer.Instance.rightHandOffset, rot, rot * Vector3.up, rot * Vector3.forward, rot * Vector3.right);
         }
 
         public static (Vector3 position, Quaternion rotation, Vector3 up, Vector3 forward, Vector3 right) TrueLeftHand()
@@ -175,10 +186,15 @@ namespace GorillaMedia
             public ButtonType buttonType;
             public void OnTriggerEnter(Collider collider)
             {
-                bool shouldGrow = Vector3.Distance(GorillaTagger.Instance.headCollider.transform.position, TrueLeftHand().position) < 0.7f
-                                  && Vector3.Angle(GorillaTagger.Instance.headCollider.transform.forward, (TrueLeftHand().position - GorillaTagger.Instance.headCollider.transform.position).normalized) < 30f;
+                bool rightHand = ConfigManager.HandChoice.Value == "Right";
+                var activeHand = rightHand ? TrueRightHand() : TrueLeftHand();
 
-                if (shouldGrow && Time.time > buttonDelay && collider.name == "RightHandTriggerCollider")
+                bool shouldGrow = Vector3.Distance(GorillaTagger.Instance.headCollider.transform.position, activeHand.position) < 0.7f
+                                  && Vector3.Angle(GorillaTagger.Instance.headCollider.transform.forward, (activeHand.position - GorillaTagger.Instance.headCollider.transform.position).normalized) < 30f;
+
+                string targetCollider = rightHand ? "LeftHandTriggerCollider" : "RightHandTriggerCollider";
+
+                if (shouldGrow && Time.time > buttonDelay && collider.name == targetCollider)
                 {
                     buttonDelay = Time.time + 0.2f;
 
@@ -186,7 +202,7 @@ namespace GorillaMedia
                         GorillaTagger.Instance.tagHapticStrength / 2f, 
                         GorillaTagger.Instance.tagHapticDuration / 2f);
 
-                    AudioSource audioSource = GorillaTagger.Instance.offlineVRRig.rightHandPlayer;
+                    AudioSource audioSource = rightHand ? GorillaTagger.Instance.offlineVRRig.rightHandPlayer : GorillaTagger.Instance.offlineVRRig.leftHandPlayer;
                     audioSource.volume = 0.3f;
                     audioSource.PlayOneShot(instance.clickSound);
 
